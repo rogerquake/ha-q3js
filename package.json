@@ -1,0 +1,32 @@
+{
+  "name": "q3js-card",
+  "version": "0.1.0",
+  "description": "Home Assistant Lovelace card for Q3JS - Quake III Arena",
+  "keywords": [
+    "home-assistant",
+    "hacs",
+    "lovelace",
+    "quake",
+    "q3js"
+  ],
+  "license": "MIT",
+  "scripts": {
+    "build": "rollup -c rollup.config.mjs",
+    "dev": "rollup -c rollup.config.mjs --watch",
+    "lint": "eslint src --ext .ts",
+    "format": "prettier --write src"
+  },
+  "devDependencies": {
+    "@rollup/plugin-node-resolve": "^15.0.0",
+    "@rollup/plugin-typescript": "^11.0.0",
+    "@typescript-eslint/eslint-plugin": "^6.0.0",
+    "@typescript-eslint/parser": "^6.0.0",
+    "eslint": "^8.0.0",
+    "prettier": "^3.0.0",
+    "rollup": "^4.0.0",
+    "rollup-plugin-minify-html-literals": "^1.0.0",
+    "rollup-plugin-terser": "^7.0.0",
+    "tslib": "^2.0.0",
+    "typescript": "^5.0.0"
+  }
+}

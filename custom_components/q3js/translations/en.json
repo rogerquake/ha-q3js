@@ -1,0 +1,20 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Q3JS - Quake III Arena",
+        "description": "Connect to the Q3JS addon metrics server. If running the addon on this HA instance, use `homeassistant.local` and port `8090`.",
+        "data": {
+          "host": "Host",
+          "port": "Port"
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Cannot connect — ensure the Q3JS addon is running."
+    },
+    "abort": {
+      "already_configured": "Q3JS is already configured."
+    }
+  }
+}
