@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import logging
 from datetime import timedelta
+from pathlib import Path
 
 import aiohttp
 import async_timeout
@@ -11,11 +12,22 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import CONF_HOST, CONF_PORT, Platform
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
+from homeassistant.components.frontend import add_extra_js_url
 
 from .const import DOMAIN
 
 _LOGGER = logging.getLogger(__name__)
 PLATFORMS: list[Platform] = [Platform.BINARY_SENSOR, Platform.SENSOR]
+
+CARD_URL = "/q3js/q3js-card.js"
+CARD_PATH = Path(__file__).parent / "www" / "q3js-card.js"
+
+
+async def async_setup(hass: HomeAssistant, config: dict) -> bool:
+    """Register the card JS as a static path and frontend resource."""
+    hass.http.register_static_path(CARD_URL, str(CARD_PATH), cache_headers=False)
+    add_extra_js_url(hass, CARD_URL)
+    return True
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
