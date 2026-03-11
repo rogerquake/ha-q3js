@@ -38,26 +38,15 @@ async def async_setup(hass: HomeAssistant, config: dict) -> bool:
 async def _register_lovelace_resource(hass: HomeAssistant, url: str) -> None:
     """Add the card JS to Lovelace resources if not already present."""
     try:
-        await hass.async_block_till_done()
-        lovelace = hass.data.get("lovelace")
-        if lovelace is None:
-            _LOGGER.warning("Q3JS: Lovelace not ready, card must be added as resource manually: %s", url)
-            return
-
-        resources = lovelace.get("resources")
-        if resources is None:
-            _LOGGER.warning("Q3JS: Lovelace resources collection not available")
-            return
-
+        from homeassistant.components.lovelace.resources import ResourceStorageCollection
+        resources = ResourceStorageCollection(hass, None)
         await resources.async_load()
         existing = [r["url"] for r in resources.async_items()]
         if url in existing:
             _LOGGER.debug("Q3JS card resource already registered")
             return
-
         await resources.async_create_item({"res_type": "module", "url": url})
         _LOGGER.info("Q3JS card registered as Lovelace resource: %s", url)
-
     except Exception as err:
         _LOGGER.warning("Q3JS could not auto-register Lovelace resource (%s) — add %s manually in Settings → Dashboards → Resources", err, url)
 
