@@ -23,32 +23,16 @@ CARD_PATH = Path(__file__).parent / "www" / "q3js-card.js"
 
 
 async def async_setup(hass: HomeAssistant, config: dict) -> bool:
-    """Register card JS as static resource and inject into Lovelace."""
-    # Register static file path
+    """Register card JS as static resource and load it on every Lovelace page."""
     from homeassistant.components.http import StaticPathConfig
+    from homeassistant.components.frontend import add_extra_js_url
+
     await hass.http.async_register_static_paths(
         [StaticPathConfig(CARD_URL, str(CARD_PATH), False)]
     )
-
-    # Auto-register as Lovelace resource so no manual step needed
-    await _register_lovelace_resource(hass, CARD_URL)
+    add_extra_js_url(hass, CARD_URL)
+    _LOGGER.info("Q3JS card JS registered at %s", CARD_URL)
     return True
-
-
-async def _register_lovelace_resource(hass: HomeAssistant, url: str) -> None:
-    """Add the card JS to Lovelace resources if not already present."""
-    try:
-        from homeassistant.components.lovelace.resources import ResourceStorageCollection
-        resources = ResourceStorageCollection(hass, None)
-        await resources.async_load()
-        existing = [r["url"] for r in resources.async_items()]
-        if url in existing:
-            _LOGGER.debug("Q3JS card resource already registered")
-            return
-        await resources.async_create_item({"res_type": "module", "url": url})
-        _LOGGER.info("Q3JS card registered as Lovelace resource: %s", url)
-    except Exception as err:
-        _LOGGER.warning("Q3JS could not auto-register Lovelace resource (%s) — add %s manually in Settings → Dashboards → Resources", err, url)
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
