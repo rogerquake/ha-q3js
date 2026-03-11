@@ -18,20 +18,22 @@ from .const import DOMAIN
 _LOGGER = logging.getLogger(__name__)
 PLATFORMS: list[Platform] = [Platform.BINARY_SENSOR, Platform.SENSOR]
 
-CARD_URL = "/q3js/q3js-card.js"
-CARD_PATH = Path(__file__).parent / "www" / "q3js-card.js"
+CARD_URL = "/local/q3js-card.js"
+CARD_SRC = Path(__file__).parent / "www" / "q3js-card.js"
 
 
 async def async_setup(hass: HomeAssistant, config: dict) -> bool:
-    """Register card JS as static resource and load it on every Lovelace page."""
-    from homeassistant.components.http import StaticPathConfig
+    """Copy card JS to /config/www/ and register as Lovelace resource."""
+    import shutil
     from homeassistant.components.frontend import add_extra_js_url
 
-    await hass.http.async_register_static_paths(
-        [StaticPathConfig(CARD_URL, str(CARD_PATH), False)]
-    )
+    www_dir = Path(hass.config.config_dir) / "www"
+    www_dir.mkdir(exist_ok=True)
+    dest = www_dir / "q3js-card.js"
+    await hass.async_add_executor_job(shutil.copy2, str(CARD_SRC), str(dest))
+
     add_extra_js_url(hass, CARD_URL)
-    _LOGGER.info("Q3JS card JS registered at %s", CARD_URL)
+    _LOGGER.info("Q3JS card JS copied to %s and registered", dest)
     return True
 
 
