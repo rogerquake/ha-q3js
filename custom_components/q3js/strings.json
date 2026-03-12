@@ -6,12 +6,13 @@
         "description": "Connect to the Q3JS addon metrics server. If running the addon on this HA instance, use `homeassistant.local` and port `8090`.",
         "data": {
           "host": "Host",
-          "port": "Port"
+          "port": "Port",
+          "connect_server": "Connect Server (host:wsport, e.g. 192.168.4.214:27961)"
         }
       }
     },
     "error": {
-      "cannot_connect": "Cannot connect — ensure the Q3JS addon is running."
+      "cannot_connect": "Cannot connect \u2014 ensure the Q3JS addon is running."
     },
     "abort": {
       "already_configured": "Q3JS is already configured."
