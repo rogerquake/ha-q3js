@@ -7,7 +7,7 @@ import voluptuous as vol
 from homeassistant import config_entries
 from homeassistant.const import CONF_HOST, CONF_PORT
 
-from .const import DEFAULT_PORT, DOMAIN
+from .const import CONF_CONNECT_SERVER, DEFAULT_CONNECT_SERVER, DEFAULT_PORT, DOMAIN
 
 
 class Q3JSConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
@@ -37,7 +37,7 @@ class Q3JSConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 self._abort_if_unique_id_configured()
                 return self.async_create_entry(
                     title=f"Q3JS @ {host}",
-                    data={CONF_HOST: host, CONF_PORT: port},
+                    data={CONF_HOST: host, CONF_PORT: port, CONF_CONNECT_SERVER: user_input.get(CONF_CONNECT_SERVER, DEFAULT_CONNECT_SERVER)},
                 )
 
         return self.async_show_form(
@@ -45,6 +45,7 @@ class Q3JSConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             data_schema=vol.Schema({
                 vol.Required(CONF_HOST, default="homeassistant.local"): str,
                 vol.Required(CONF_PORT, default=DEFAULT_PORT): int,
+                vol.Optional(CONF_CONNECT_SERVER, default=DEFAULT_CONNECT_SERVER): str,
             }),
             errors=errors,
         )
