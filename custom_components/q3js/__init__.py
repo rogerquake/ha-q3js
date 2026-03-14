@@ -33,10 +33,9 @@ def _card_version() -> str:
 CARD_URL = f"{_CARD_URL_PATH}/q3js-card.js?v={_card_version()}"
 
 
-async def async_setup(hass: HomeAssistant, config: dict) -> bool:
-    """Register static path and Lovelace resource for the Q3JS card."""
-
-    # Serve www/ at /q3js_files/
+async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
+    """Set up Q3JS from a config entry."""
+    # Register static path and Lovelace resource on first entry setup
     try:
         hass.http.register_static_path(
             _CARD_URL_PATH,
@@ -45,50 +44,35 @@ async def async_setup(hass: HomeAssistant, config: dict) -> bool:
         )
         _LOGGER.info("Q3JS static path registered: %s", _CARD_URL_PATH)
     except Exception as err:
-        _LOGGER.warning("Q3JS static path already registered: %s", err)
+        _LOGGER.debug("Q3JS static path already registered: %s", err)
 
-    # Register via lovelace component resource collection (updates memory + storage)
-    hass.async_create_task(_async_add_resource(hass))
-    return True
+    await _async_add_resource(hass)
 
-
-async def _async_add_resource(hass: HomeAssistant) -> None:
-    """Add card to Lovelace resources via the live collection."""
-    import uuid
-
-    # Wait for lovelace component to finish loading
-    if not await hass.components.lovelace.async_setup():
-        pass  # already set up is fine
-
-    try:
-        resources = hass.data["lovelace"]["resources"]
-        await resources.async_load()
-
-        current_urls = [item["url"] for item in resources.async_items()]
-        _LOGGER.info("Q3JS existing resource URLs: %s", current_urls)
-
-        # Remove stale, add current
-        for item in list(resources.async_items()):
-            if "q3js-card.js" in item.get("url", ""):
-                await resources.async_delete_item(item["id"])
-
-        await resources.async_create_item({
-            "res_type": "module",
-            "url": CARD_URL,
-        })
-        _LOGGER.info("Q3JS card added to Lovelace resources: %s", CARD_URL)
-
-    except Exception as err:
-        _LOGGER.error("Q3JS failed to add Lovelace resource: %s", err)
-
-
-async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
-    """Set up Q3JS from a config entry."""
     coordinator = Q3JSCoordinator(hass, entry)
     await coordinator.async_config_entry_first_refresh()
     hass.data.setdefault(DOMAIN, {})[entry.entry_id] = coordinator
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
     return True
+
+
+async def _async_add_resource(hass: HomeAssistant) -> None:
+    """Add card JS to Lovelace resources (memory + storage)."""
+    import uuid
+    from homeassistant.helpers.storage import Store
+
+    store: Store = Store(hass, 1, "lovelace_resources")
+    data = await store.async_load() or {"items": []}
+    items: list[dict] = data.get("items", [])
+
+    if any(i.get("url") == CARD_URL for i in items):
+        _LOGGER.info("Q3JS card already in resources: %s", CARD_URL)
+        return
+
+    items = [i for i in items if "q3js-card.js" not in i.get("url", "")]
+    items.append({"id": uuid.uuid4().hex, "type": "module", "url": CARD_URL})
+    data["items"] = items
+    await store.async_save(data)
+    _LOGGER.info("Q3JS card added to resources: %s", CARD_URL)
 
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
