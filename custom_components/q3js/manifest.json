@@ -3,8 +3,10 @@
   "name": "Q3JS - Quake III Arena",
   "version": "0.2.3",
   "documentation": "https://github.com/rogerquake/ha-q3js",
-  "issue_tracker": "https://github.com/Yrogerquake/ha-q3js/issues",
-  "codeowners": ["@rogerquake"],
+  "issue_tracker": "https://github.com/rogerquake/ha-q3js/issues",
+  "codeowners": [
+    "@rogerquake"
+  ],
   "config_flow": true,
   "dependencies": [],
   "requirements": [],
