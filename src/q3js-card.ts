@@ -1,72 +1,30 @@
-/**
- * Q3JS Lovelace Card
- *
- * Embeds Quake III Arena (via q3js WebAssembly) in a Home Assistant
- * dashboard card, with a live leaderboard pulled from the Q3JS metrics server.
- *
- * Card YAML configuration:
- *
- *   type: custom:q3js-card
- *   title: "Quake III Arena"         # optional header
- *   server_host: "192.168.1.100"     # HA host running the Q3JS addon
- *   ws_port: 27961                    # WebSocket proxy port
- *   metrics_url: "http://192.168.1.100:8090/api/metrics"
- *   map_name: "q3dm17"
- *   frag_limit: 30
- *   bots:
- *     - name: "Keel"
- *       skill: 3
- *     - name: "Sarge"
- *       skill: 3
- *   auto_spectate: true
- *   spectator_name: "HA_Spectator"
- *   show_leaderboard: true
- *   height: 600
- *   game_url: ""                      # override q3js client URL (optional)
- */
-
-interface BotConfig {
-  name: string;
-  skill: number;
-}
-
 interface Q3JSCardConfig {
   type: string;
   title?: string;
   server_host?: string;
-  ws_port?: number;
-  metrics_url?: string;
-  map_name?: string;
-  frag_limit?: number;
-  bots?: BotConfig[];
-  auto_spectate?: boolean;
-  spectator_name?: string;
-  show_leaderboard?: boolean;
-  height?: number;
+  web_port?: number;
+  connect_server?: string;
+  entity_prefix?: string;
   game_url?: string;
+  show_map?: boolean;
+  show_time?: boolean;
+  show_leaderboard?: boolean;
+  show_players?: boolean;
+  height?: number;
 }
 
-interface PlayerData {
-  name: string;
-  frags: number;
-  deaths: number;
+interface HassEntityState {
+  state: string;
+  attributes: Record<string, unknown>;
 }
 
-interface MetricsData {
-  map_name: string;
-  match_active: boolean;
-  match_time_seconds: number;
-  match_time_formatted: string;
-  leaderboard: PlayerData[];
-  last_updated: string;
+interface Hass {
+  states: Record<string, HassEntityState>;
 }
-
-// ─── Card ─────────────────────────────────────────────────────────────────────
 
 class Q3JSCard extends HTMLElement {
   private _config!: Q3JSCardConfig;
-  private _metrics: MetricsData | null = null;
-  private _metricsInterval: ReturnType<typeof setInterval> | null = null;
+  private _hass: Hass | null = null;
   private _launched = false;
 
   static getConfigElement(): HTMLElement {
@@ -78,17 +36,13 @@ class Q3JSCard extends HTMLElement {
       type: "custom:q3js-card",
       title: "Quake III Arena",
       server_host: window.location.hostname,
-      ws_port: 27961,
-      metrics_url: `http://${window.location.hostname}:8090/api/metrics`,
-      map_name: "q3dm17",
-      frag_limit: 30,
-      bots: [
-        { name: "Keel", skill: 3 },
-        { name: "Sarge", skill: 3 },
-      ],
-      auto_spectate: true,
-      spectator_name: "HA_Spectator",
+      web_port: 8443,
+      connect_server: "",
+      entity_prefix: "q3js",
+      show_map: true,
+      show_time: true,
       show_leaderboard: true,
+      show_players: true,
       height: 600,
     };
   }
@@ -101,300 +55,220 @@ class Q3JSCard extends HTMLElement {
   setConfig(config: Q3JSCardConfig): void {
     this._config = {
       server_host: window.location.hostname,
-      ws_port: 27961,
-      map_name: "q3dm17",
-      frag_limit: 30,
-      bots: [],
-      auto_spectate: true,
-      spectator_name: "HA_Spectator",
+      web_port: 8443,
+      connect_server: "",
+      entity_prefix: "q3js",
+      show_map: true,
+      show_time: true,
       show_leaderboard: true,
+      show_players: true,
       height: 600,
       ...config,
     };
-    if (!this._config.metrics_url) {
-      this._config.metrics_url = `http://${this._config.server_host}:8090/api/metrics`;
-    }
     this._render();
-    this._startPolling();
   }
 
-  set hass(_hass: unknown) {
-    // unused — data comes from metrics server directly
+  set hass(hass: Hass) {
+    this._hass = hass;
+    this._updateUI();
   }
 
-  disconnectedCallback(): void {
-    this._stopPolling();
-  }
-
-  // ─── Render ─────────────────────────────────────────────────────────────
+  disconnectedCallback(): void {}
 
   private _render(): void {
     const c = this._config;
-    const height = c.height ?? 600;
+    const height = c.height || 600;
     const showLb = c.show_leaderboard !== false;
+    const showMap = c.show_map !== false;
+    const showTime = c.show_time !== false;
+    const showPlayers = c.show_players !== false;
+    const showFooter = showMap || showTime;
 
     this.shadowRoot!.innerHTML = `
       <style>
-        :host { display: block; }
-        ha-card { background: #0a0a14; overflow: hidden; }
-
-        .header {
-          display: flex; align-items: center; justify-content: space-between;
-          padding: 12px 16px 8px;
-          font-family: monospace; font-size: 1em; letter-spacing: 2px;
-          text-transform: uppercase; color: #ff6600;
-          border-bottom: 1px solid #1e1e2e;
-        }
-        .header-title { display: flex; align-items: center; gap: 8px; }
-        .status-dot {
-          width: 9px; height: 9px; border-radius: 50%;
-          background: #333; transition: all 0.4s;
-        }
-        .status-dot.on { background: #22ff44; box-shadow: 0 0 6px #22ff44; }
-
-        .game-wrap {
-          position: relative; width: 100%; height: ${height}px; background: #000;
-        }
-        .game-iframe { width: 100%; height: 100%; border: none; display: block; }
-        .hidden { display: none !important; }
-
-        .splash {
-          position: absolute; inset: 0;
-          display: flex; flex-direction: column;
-          align-items: center; justify-content: center;
-          background: radial-gradient(ellipse at 50% 40%, #1c0800 0%, #000 70%);
-          cursor: default;
-        }
-        .splash-logo {
-          font-family: monospace; font-size: 3.5em; font-weight: 900;
-          color: #ff6600; text-shadow: 0 0 30px #ff4400;
-          letter-spacing: 6px; margin-bottom: 4px;
-        }
-        .splash-sub {
-          font-family: monospace; font-size: 0.72em; color: #884422;
-          letter-spacing: 4px; text-transform: uppercase; margin-bottom: 28px;
-        }
-        .play-btn {
-          padding: 13px 42px;
-          background: #992200; color: #fff;
-          border: 2px solid #ff4400; font-family: monospace;
-          font-size: 0.9em; letter-spacing: 4px; text-transform: uppercase;
-          cursor: pointer; transition: all 0.15s;
-          clip-path: polygon(10px 0%, 100% 0%, calc(100% - 10px) 100%, 0% 100%);
-        }
-        .play-btn:hover { background: #ff4400; transform: scale(1.04); }
-        .splash-meta {
-          margin-top: 18px; font-family: monospace; font-size: 0.72em;
-          color: #553322; text-align: center; line-height: 1.8;
-        }
-        .splash-meta span { color: #cc6633; }
-
-        .leaderboard {
-          background: #07070f; border-top: 1px solid #1a1a2a; padding: 10px 16px;
-        }
-        .lb-head {
-          font-family: monospace; font-size: 0.7em; letter-spacing: 3px;
-          color: #ff6600; text-transform: uppercase; margin-bottom: 6px;
-        }
-        .lb-row {
-          display: flex; align-items: center;
-          padding: 4px 0; border-bottom: 1px solid #111;
-          font-family: monospace; font-size: 0.82em;
-        }
-        .lb-rank { color: #444; width: 26px; flex-shrink: 0; }
-        .lb-name { color: #ccc; flex: 1; padding: 0 6px; overflow: hidden; text-overflow: ellipsis; }
-        .lb-frags { color: #ff6600; font-weight: bold; width: 38px; text-align: right; }
-        .lb-deaths { color: #555; width: 44px; text-align: right; font-size: 0.85em; }
-        .lb-empty { color: #333; font-family: monospace; font-size: 0.78em; padding: 6px 0; }
-
-        .footer {
-          display: flex; gap: 12px; flex-wrap: wrap;
-          padding: 7px 16px; background: #04040c;
-          border-top: 1px solid #111;
-        }
-        .chip {
-          font-family: monospace; font-size: 0.72em; color: #666;
-          display: flex; align-items: center; gap: 4px;
-        }
-        .chip b { color: #cc7733; }
-
-        .controls {
-          display: flex; gap: 6px; flex-wrap: wrap;
-          padding: 7px 16px; background: #04040c;
-          border-top: 1px solid #0f0f1a;
-        }
-        button.ctrl {
-          padding: 4px 12px; background: #0e0e1a; color: #888;
-          border: 1px solid #222; font-family: monospace; font-size: 0.72em;
-          cursor: pointer; transition: all 0.12s; letter-spacing: 1px;
-        }
-        button.ctrl:hover { background: #1a1a2e; color: #ff6600; border-color: #ff4400; }
+        :host{display:block}ha-card{background:#0a0a14;overflow:hidden}
+        .header{display:flex;align-items:center;justify-content:space-between;padding:12px 16px 8px;font-family:monospace;font-size:1em;letter-spacing:2px;text-transform:uppercase;color:#ff6600;border-bottom:1px solid #1e1e2e}
+        .dot{width:9px;height:9px;border-radius:50%;background:#333;transition:all .4s}
+        .dot.on{background:#22ff44;box-shadow:0 0 6px #22ff44}
+        .wrap{position:relative;width:100%;height:${height}px;background:#000}
+        .frame{width:100%;height:100%;border:none;display:block}
+        .hidden{display:none!important}
+        .splash{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;background:radial-gradient(ellipse at 50% 40%,#1c0800,#000 70%)}
+        .logo{font-family:monospace;font-size:3.5em;font-weight:900;color:#ff6600;text-shadow:0 0 30px #ff4400;letter-spacing:6px;margin-bottom:4px}
+        .sub{font-family:monospace;font-size:.72em;color:#884422;letter-spacing:4px;text-transform:uppercase;margin-bottom:28px}
+        .play{padding:13px 42px;background:#992200;color:#fff;border:2px solid #ff4400;font-family:monospace;font-size:.9em;letter-spacing:4px;text-transform:uppercase;cursor:pointer;clip-path:polygon(10px 0%,100% 0%,calc(100% - 10px) 100%,0% 100%)}
+        .play:hover{background:#ff4400}
+        .meta{margin-top:18px;font-family:monospace;font-size:.72em;color:#553322;text-align:center;line-height:1.8}
+        .meta span{color:#cc6633}
+        .lb{background:#07070f;border-top:1px solid #1a1a2a;padding:10px 16px}
+        .lbh{font-family:monospace;font-size:.7em;letter-spacing:3px;color:#ff6600;text-transform:uppercase;margin-bottom:6px}
+        .lbrow{display:flex;align-items:center;padding:4px 0;border-bottom:1px solid #111;font-family:monospace;font-size:.82em}
+        .rk{color:#444;width:26px;flex-shrink:0}.nm{color:#ccc;flex:1;padding:0 6px;overflow:hidden;text-overflow:ellipsis}
+        .fr{color:#ff6600;font-weight:bold;width:38px;text-align:right}.de{color:#555;width:44px;text-align:right;font-size:.85em}
+        .empty{color:#333;font-family:monospace;font-size:.78em;padding:6px 0}
+        .footer{display:flex;gap:12px;flex-wrap:wrap;padding:7px 16px;background:#04040c;border-top:1px solid #111}
+        .chip{font-family:monospace;font-size:.72em;color:#666;display:flex;align-items:center;gap:4px}
+        .chip b{color:#cc7733}
+        .ctrls{display:flex;gap:6px;flex-wrap:wrap;padding:7px 16px;background:#04040c;border-top:1px solid #0f0f1a}
+        button.ctrl{padding:4px 12px;background:#0e0e1a;color:#888;border:1px solid #222;font-family:monospace;font-size:.72em;cursor:pointer;letter-spacing:1px}
+        button.ctrl:hover{background:#1a1a2e;color:#ff6600;border-color:#ff4400}
+        .refocus{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,0.55);color:#ff6600;font-family:monospace;font-size:1.1em;letter-spacing:3px;cursor:pointer;z-index:10}
+        .refocus:hover{background:rgba(0,0,0,0.7)}
       </style>
-
       <ha-card>
-        ${c.title ? `
         <div class="header">
-          <div class="header-title">⚡ ${this._esc(c.title)}</div>
-          <div class="status-dot" id="dot"></div>
-        </div>` : `<div style="position:absolute;top:10px;right:12px;z-index:10">
-          <div class="status-dot" id="dot"></div>
-        </div>`}
-
-        <div class="game-wrap">
+          <div>⚡ ${this._esc(c.title || "Quake III Arena")}</div>
+          <div class="dot" id="dot"></div>
+        </div>
+        <div class="wrap">
           <div class="splash" id="splash">
-            <div class="splash-logo">Q3JS</div>
-            <div class="splash-sub">Quake III Arena</div>
-            <button class="play-btn" id="playBtn">▶ PLAY</button>
-            <div class="splash-meta">
-              Map <span>${this._esc(c.map_name ?? "q3dm17")}</span>
-              &nbsp;·&nbsp; Frag limit <span>${c.frag_limit ?? 30}</span>
-              &nbsp;·&nbsp; ${(c.bots ?? []).length} bot(s)
+            <div class="logo">Q3JS</div>
+            <div class="sub">Quake III Arena</div>
+            <button class="play" id="playBtn">▶ PLAY</button>
+            <div class="meta">
+              Server <span>${this._esc(c.server_host || window.location.hostname)}:${c.web_port || 8443}</span>
             </div>
           </div>
-          <iframe class="game-iframe hidden" id="frame"
-            allow="autoplay; fullscreen; pointer-lock"
-            allowfullscreen></iframe>
+          <iframe class="frame hidden" id="frame" allow="autoplay;fullscreen;pointer-lock" allowfullscreen></iframe>
+          <div class="refocus hidden" id="refocus">🖱 Click to resume</div>
         </div>
-
-        ${showLb ? `
-        <div class="leaderboard">
-          <div class="lb-head">🏆 Leaderboard</div>
-          <div id="lbRows"><div class="lb-empty">Waiting for match data…</div></div>
-        </div>` : ""}
-
+        ${showLb ? `<div class="lb"><div class="lbh">🏆 ${showPlayers ? "Leaderboard" : "Match"}</div><div id="lbRows"><div class="empty">Waiting for match data…</div></div></div>` : ""}
+        ${showFooter ? `
         <div class="footer">
-          <div class="chip">🗺 <b id="fMap">${this._esc(c.map_name ?? "q3dm17")}</b></div>
-          <div class="chip">⏱ <b id="fTime">--:--</b></div>
+          ${showMap ? `<div class="chip">🗺 <b id="fMap">–</b></div>` : ""}
+          ${showTime ? `<div class="chip">⏱ <b id="fTime">--:--</b></div>` : ""}
           <div class="chip" id="fStatus">🔴 <b>Idle</b></div>
-        </div>
-
-        <div class="controls">
+        </div>` : ""}
+        <div class="ctrls">
           <button class="ctrl" id="btnFs">⛶ Fullscreen</button>
-          <button class="ctrl" id="btnSpec">👁 Spectate</button>
-          <button class="ctrl" id="btnRestart">↺ Restart</button>
           <button class="ctrl" id="btnDisc">✕ Disconnect</button>
         </div>
-      </ha-card>
-    `;
+      </ha-card>`;
 
-    this._bindEvents();
+    this.shadowRoot!.getElementById("playBtn")!.addEventListener("click", () => this._launch());
+    this.shadowRoot!.getElementById("refocus")!.addEventListener("click", () => this._refocus());
+    this.shadowRoot!.getElementById("btnFs")!.addEventListener("click", () => this._fullscreen());
+    this.shadowRoot!.getElementById("btnDisc")!.addEventListener("click", () => this._disconnect());
+
+    // blur = iframe took focus (game active) → hide overlay
+    // focus = parent got focus back (user clicked HA) → show overlay
+    window.addEventListener("blur", () => {
+      if (!this._launched) return;
+      const refocus = this.shadowRoot!.getElementById("refocus");
+      if (refocus) refocus.classList.add("hidden");
+    });
+    window.addEventListener("focus", () => {
+      if (!this._launched) return;
+      const refocus = this.shadowRoot!.getElementById("refocus");
+      if (refocus) refocus.classList.remove("hidden");
+    });
+
+    if (this._hass) this._updateUI();
   }
-
-  private _bindEvents(): void {
-    this.shadowRoot!.getElementById("playBtn")?.addEventListener("click", () => this._launch());
-    this.shadowRoot!.getElementById("btnFs")?.addEventListener("click", () => this._fullscreen());
-    this.shadowRoot!.getElementById("btnSpec")?.addEventListener("click", () => this._spectate());
-    this.shadowRoot!.getElementById("btnRestart")?.addEventListener("click", () => this._restart());
-    this.shadowRoot!.getElementById("btnDisc")?.addEventListener("click", () => this._disconnect());
-  }
-
-  // ─── Game control ────────────────────────────────────────────────────────
 
   private _launch(): void {
     const c = this._config;
-    const splash = this.shadowRoot!.getElementById("splash")!;
+    const host = c.server_host || window.location.hostname;
+    const webPort = c.web_port || 8443;
+    const base = c.game_url || `https://${host}:${webPort}`;
+    const connectTarget = c.connect_server || "";
+    const src = connectTarget
+      ? `${base}?${encodeURIComponent("+connect " + connectTarget)}`
+      : base;
     const frame = this.shadowRoot!.getElementById("frame") as HTMLIFrameElement;
-
-    // Prefer a locally hosted q3js instance; fall back to q3js.com
-    const clientUrl = c.game_url || "https://q3js.com";
-    frame.src = clientUrl;
-    splash.classList.add("hidden");
+    frame.src = src;
+    this.shadowRoot!.getElementById("splash")!.classList.add("hidden");
     frame.classList.remove("hidden");
     this._launched = true;
-
-    frame.addEventListener("load", () => {
-      if (c.auto_spectate !== false) {
-        setTimeout(() => this._spectate(), 4000);
-      }
-    }, { once: true });
-  }
-
-  private _spectate(): void {
-    const frame = this.shadowRoot!.getElementById("frame") as HTMLIFrameElement | null;
-    if (!frame || !this._launched) return;
-    const name = this._config.spectator_name ?? "HA_Spectator";
-    // q3js accepts postMessage commands
-    frame.contentWindow?.postMessage({ type: "q3cmd", command: `name "${name}"` }, "*");
-    frame.contentWindow?.postMessage({ type: "q3cmd", command: "team spectator" }, "*");
+    const refocus = this.shadowRoot!.getElementById("refocus");
+    if (refocus) refocus.classList.add("hidden");
   }
 
   private _fullscreen(): void {
-    const frame = this.shadowRoot!.getElementById("frame") as HTMLElement | null;
-    if (frame && this._launched) frame.requestFullscreen?.();
-  }
-
-  private _restart(): void {
-    const c = this._config;
-    fetch(`http://${c.server_host}:8090/api/rcon`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ command: "map_restart" }),
-    }).catch(() => {/* best-effort */});
+    const f = this.shadowRoot!.getElementById("frame") as HTMLElement;
+    if (f && this._launched) f.requestFullscreen?.();
   }
 
   private _disconnect(): void {
-    const splash = this.shadowRoot!.getElementById("splash")!;
     const frame = this.shadowRoot!.getElementById("frame") as HTMLIFrameElement;
     frame.src = "about:blank";
     frame.classList.add("hidden");
-    splash.classList.remove("hidden");
+    this.shadowRoot!.getElementById("splash")!.classList.remove("hidden");
     this._launched = false;
     this._setActive(false);
   }
 
-  // ─── Metrics polling ─────────────────────────────────────────────────────
-
-  private _startPolling(): void {
-    this._stopPolling();
-    const url = this._config.metrics_url;
-    if (!url) return;
-    const tick = async () => {
-      try {
-        const r = await fetch(url, { cache: "no-store" });
-        if (r.ok) {
-          this._metrics = await r.json() as MetricsData;
-          this._updateUI();
-        }
-      } catch {/* network down */}
-    };
-    void tick();
-    this._metricsInterval = setInterval(tick, 10_000);
-  }
-
-  private _stopPolling(): void {
-    if (this._metricsInterval !== null) {
-      clearInterval(this._metricsInterval);
-      this._metricsInterval = null;
+  private _refocus(): void {
+    const frame = this.shadowRoot!.getElementById("frame") as HTMLIFrameElement;
+    const refocus = this.shadowRoot!.getElementById("refocus");
+    if (refocus) refocus.classList.add("hidden");
+    if (frame) {
+      frame.focus();
+      frame.contentWindow?.focus();
     }
   }
 
   private _updateUI(): void {
-    const m = this._metrics;
-    if (!m) return;
+    const hass = this._hass;
+    if (!hass) return;
+    const prefix = this._config.entity_prefix || "q3js";
+    const showPlayers = this._config.show_players !== false;
+    const showMap = this._config.show_map !== false;
+    const showTime = this._config.show_time !== false;
+    const showLb = this._config.show_leaderboard !== false;
 
-    this._setActive(m.match_active);
+    const mapState = hass.states[`sensor.${prefix}_current_map`];
+    const timeState = hass.states[`sensor.${prefix}_match_time`];
+    const activeState = hass.states[`binary_sensor.${prefix}_match_active`];
 
-    const fMap = this.shadowRoot!.getElementById("fMap");
-    const fTime = this.shadowRoot!.getElementById("fTime");
+    const mapName = mapState ? mapState.state : "–";
+    const matchActive = activeState ? activeState.state === "on" : false;
+    const timeFormatted = timeState
+      ? ((timeState.attributes.formatted as string) || "00:00")
+      : "00:00";
+
+    this._setActive(matchActive);
+
+    if (showMap) {
+      const fMap = this.shadowRoot!.getElementById("fMap");
+      if (fMap) fMap.textContent = mapName;
+    }
+    if (showTime) {
+      const fTime = this.shadowRoot!.getElementById("fTime");
+      if (fTime) fTime.textContent = timeFormatted;
+    }
     const fStatus = this.shadowRoot!.getElementById("fStatus");
-    if (fMap) fMap.textContent = m.map_name ?? "–";
-    if (fTime) fTime.textContent = m.match_time_formatted ?? "00:00";
-    if (fStatus) fStatus.innerHTML = m.match_active
-      ? '🟢 <b>Active</b>'
-      : '🔴 <b>Idle</b>';
+    if (fStatus) fStatus.innerHTML = matchActive ? "🟢 <b>Active</b>" : "🔴 <b>Idle</b>";
 
-    const lbRows = this.shadowRoot!.getElementById("lbRows");
-    if (!lbRows) return;
-    const lb = m.leaderboard ?? [];
-    lbRows.innerHTML = lb.length
-      ? lb.map((p, i) => `
-          <div class="lb-row">
-            <span class="lb-rank">#${i + 1}</span>
-            <span class="lb-name">${this._esc(p.name)}</span>
-            <span class="lb-frags">${p.frags}</span>
-            <span class="lb-deaths">${p.deaths}💀</span>
-          </div>`).join("")
-      : `<div class="lb-empty">No players yet…</div>`;
+    if (showLb) {
+      const lbRows = this.shadowRoot!.getElementById("lbRows");
+      if (!lbRows) return;
+
+      if (showPlayers) {
+        const fragPattern = new RegExp(`^sensor\\.${prefix}_(.+)_frags$`);
+        const players = Object.entries(hass.states)
+          .filter(([id]) => fragPattern.test(id))
+          .map(([id, state]) => ({
+            name: (state.attributes.player_name as string)
+              || id.replace(fragPattern, "$1").replace(/_/g, " "),
+            frags: parseInt(state.state) || 0,
+            deaths: (state.attributes.deaths as number) || 0,
+          }))
+          .sort((a, b) => b.frags - a.frags);
+
+        lbRows.innerHTML = players.length
+          ? players.map((p, i) => `
+              <div class="lbrow">
+                <span class="rk">#${i + 1}</span>
+                <span class="nm">${this._esc(p.name)}</span>
+                <span class="fr">${p.frags}</span>
+                <span class="de">${p.deaths}💀</span>
+              </div>`).join("")
+          : `<div class="empty">No players yet…</div>`;
+      } else {
+        lbRows.innerHTML = `<div class="empty" style="color:#555">${matchActive ? "Match in progress" : "Waiting for match…"}</div>`;
+      }
+    }
   }
 
   private _setActive(on: boolean): void {
@@ -402,15 +276,13 @@ class Q3JSCard extends HTMLElement {
   }
 
   private _esc(s: string): string {
-    return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+    return String(s || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
   }
 
   getCardSize(): number {
-    return Math.ceil((this._config.height ?? 600) / 50) + 4;
+    return Math.ceil((this._config.height || 600) / 50) + 4;
   }
 }
-
-// ─── Card Editor ──────────────────────────────────────────────────────────────
 
 class Q3JSCardEditor extends HTMLElement {
   private _config!: Q3JSCardConfig;
@@ -422,65 +294,68 @@ class Q3JSCardEditor extends HTMLElement {
 
   private _render(): void {
     const c = this._config;
+    const chk = (key: keyof Q3JSCardConfig) => c[key] !== false ? "checked" : "";
     this.innerHTML = `
       <style>
-        .row { margin-bottom: 10px; }
-        label { display: block; font-size: 0.8em; color: var(--secondary-text-color); margin-bottom: 3px; }
-        input { width: 100%; padding: 6px 8px; border: 1px solid var(--divider-color); border-radius: 4px;
-          background: var(--card-background-color); color: var(--primary-text-color); box-sizing: border-box; }
+        .row{margin-bottom:10px}
+        label{display:block;font-size:.8em;color:var(--secondary-text-color);margin-bottom:3px}
+        input[type=text],input[type=number]{width:100%;padding:6px 8px;border:1px solid var(--divider-color);border-radius:4px;background:var(--card-background-color);color:var(--primary-text-color);box-sizing:border-box}
+        .toggles{display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:4px}
+        .toggle{display:flex;align-items:center;gap:6px;font-size:.82em;color:var(--primary-text-color);cursor:pointer}
+        .toggle input{width:auto}
+        .section{font-size:.75em;color:var(--secondary-text-color);text-transform:uppercase;letter-spacing:1px;margin:14px 0 6px;border-bottom:1px solid var(--divider-color);padding-bottom:4px}
       </style>
       <div style="padding:12px">
-        <div class="row"><label>Title</label>
-          <input id="title" value="${c.title ?? ""}"></div>
-        <div class="row"><label>Server Host</label>
-          <input id="server_host" value="${c.server_host ?? window.location.hostname}"></div>
-        <div class="row"><label>WebSocket Port</label>
-          <input id="ws_port" type="number" value="${c.ws_port ?? 27961}"></div>
-        <div class="row"><label>Metrics URL</label>
-          <input id="metrics_url" value="${c.metrics_url ?? ""}"></div>
-        <div class="row"><label>Map Name</label>
-          <input id="map_name" value="${c.map_name ?? "q3dm17"}"></div>
-        <div class="row"><label>Frag Limit</label>
-          <input id="frag_limit" type="number" value="${c.frag_limit ?? 30}"></div>
-        <div class="row"><label>Card Height (px)</label>
-          <input id="height" type="number" value="${c.height ?? 600}"></div>
-        <div class="row"><label>Spectator Name</label>
-          <input id="spectator_name" value="${c.spectator_name ?? "HA_Spectator"}"></div>
-      </div>
-    `;
-    this.querySelectorAll("input").forEach((el) =>
-      el.addEventListener("change", () => this._fire())
-    );
+        <div class="section">Connection</div>
+        <div class="row"><label>Title</label><input type="text" id="title" value="${c.title || ""}"></div>
+        <div class="row"><label>Server Host (web client)</label><input type="text" id="server_host" value="${c.server_host || window.location.hostname}"></div>
+        <div class="row"><label>Web Client Port (HTTPS)</label><input type="number" id="web_port" value="${c.web_port || 8443}"></div>
+        <div class="row"><label>Connect Server (host:wsport)</label><input type="text" id="connect_server" value="${c.connect_server || ""}"></div>
+
+        <div class="section">Integration</div>
+        <div class="row"><label>Entity Prefix</label><input type="text" id="entity_prefix" value="${c.entity_prefix || "q3js"}"></div>
+
+        <div class="section">Display</div>
+        <div class="row"><label>Card Height (px)</label><input type="number" id="height" value="${c.height || 600}"></div>
+        <div class="toggles">
+          <label class="toggle"><input type="checkbox" id="show_map" ${chk("show_map")}> Show Map Name</label>
+          <label class="toggle"><input type="checkbox" id="show_time" ${chk("show_time")}> Show Match Time</label>
+          <label class="toggle"><input type="checkbox" id="show_leaderboard" ${chk("show_leaderboard")}> Show Leaderboard</label>
+          <label class="toggle"><input type="checkbox" id="show_players" ${chk("show_players")}> Show Players</label>
+        </div>
+      </div>`;
+
+    this.querySelectorAll("input[type=text],input[type=number]")
+      .forEach(el => el.addEventListener("change", () => this._fire()));
+    this.querySelectorAll("input[type=checkbox]")
+      .forEach(el => el.addEventListener("change", () => this._fire()));
   }
 
   private _fire(): void {
-    const get = (id: string) =>
-      (this.querySelector(`#${id}`) as HTMLInputElement)?.value ?? "";
-    const getNum = (id: string) => parseInt(get(id), 10) || 0;
-
-    this.dispatchEvent(
-      new CustomEvent("config-changed", {
-        detail: {
-          config: {
-            ...this._config,
-            title: get("title"),
-            server_host: get("server_host"),
-            ws_port: getNum("ws_port"),
-            metrics_url: get("metrics_url"),
-            map_name: get("map_name"),
-            frag_limit: getNum("frag_limit"),
-            height: getNum("height"),
-            spectator_name: get("spectator_name"),
-          } satisfies Q3JSCardConfig,
-        },
-        bubbles: true,
-        composed: true,
-      })
-    );
+    const get = (id: string) => (this.querySelector(`#${id}`) as HTMLInputElement).value;
+    const num = (id: string) => parseInt(get(id), 10) || 0;
+    const chk = (id: string) => (this.querySelector(`#${id}`) as HTMLInputElement).checked;
+    this.dispatchEvent(new CustomEvent("config-changed", {
+      detail: {
+        config: {
+          ...this._config,
+          title: get("title"),
+          server_host: get("server_host"),
+          web_port: num("web_port"),
+          connect_server: get("connect_server"),
+          entity_prefix: get("entity_prefix"),
+          height: num("height"),
+          show_map: chk("show_map"),
+          show_time: chk("show_time"),
+          show_leaderboard: chk("show_leaderboard"),
+          show_players: chk("show_players"),
+        } satisfies Q3JSCardConfig,
+      },
+      bubbles: true,
+      composed: true,
+    }));
   }
 }
-
-// ─── Register ─────────────────────────────────────────────────────────────────
 
 customElements.define("q3js-card", Q3JSCard);
 customElements.define("q3js-card-editor", Q3JSCardEditor);
@@ -491,11 +366,10 @@ customElements.define("q3js-card-editor", Q3JSCardEditor);
   name: "Q3JS – Quake III Arena",
   description: "Play Quake III Arena in your dashboard with live match stats.",
   preview: true,
-  documentationURL: "https://github.com/YOUR_GITHUB_USER/ha-q3js",
 });
 
 console.info(
-  "%c Q3JS CARD %c v0.1.0 ",
+  "%c Q3JS CARD %c loaded",
   "background:#ff6600;color:#000;font-weight:bold;padding:2px 4px;",
   "background:#111;color:#ff6600;padding:2px 4px;"
 );
