@@ -20,7 +20,6 @@ _LOGGER = logging.getLogger(__name__)
 PLATFORMS: list[Platform] = [Platform.BINARY_SENSOR, Platform.SENSOR]
 
 _CARD_SRC = Path(__file__).parent / "www" / "q3js-card.js"
-_CARD_URL_PATH = "/q3js_files"
 
 
 def _card_version() -> str:
@@ -30,21 +29,23 @@ def _card_version() -> str:
         return "1"
 
 
-CARD_URL = f"{_CARD_URL_PATH}/q3js-card.js?v={_card_version()}"
+CARD_URL = f"/local/q3js-card.js?v={_card_version()}"
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up Q3JS from a config entry."""
-    # Register static path and Lovelace resource on first entry setup
+    print("Q3JS: async_setup_entry called", flush=True)
+    _LOGGER.warning("Q3JS: async_setup_entry called")
+
+    # Copy card JS to /config/www/ so it's served at /local/q3js-card.js
+    import shutil
     try:
-        hass.http.register_static_path(
-            _CARD_URL_PATH,
-            str(_CARD_SRC.parent),
-            cache_headers=False,
-        )
-        _LOGGER.info("Q3JS static path registered: %s", _CARD_URL_PATH)
+        www_dir = Path(hass.config.config_dir) / "www"
+        www_dir.mkdir(exist_ok=True)
+        shutil.copy2(str(_CARD_SRC), str(www_dir / "q3js-card.js"))
+        _LOGGER.warning("Q3JS: copied card JS to %s", www_dir)
     except Exception as err:
-        _LOGGER.debug("Q3JS static path already registered: %s", err)
+        _LOGGER.warning("Q3JS: failed to copy card JS: %s", err)
 
     await _async_add_resource(hass)
 
