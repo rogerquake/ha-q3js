@@ -1,6 +1,6 @@
 {
   "name": "q3js-card",
-  "version": "0.1.7",
+  "version": "0.1.8",
   "description": "Home Assistant Lovelace card for Q3JS - Quake III Arena",
   "keywords": [
     "home-assistant",
