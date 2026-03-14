@@ -33,11 +33,53 @@ CARD_URL = f"/hacsfiles/q3js/q3js-card.js?hacstag={_hacstag()}"
 
 
 async def async_setup(hass: HomeAssistant, config: dict) -> bool:
-    """Register Q3JS Lovelace card served via HACS /hacsfiles/ path."""
-    from homeassistant.components.frontend import add_extra_js_url
-    add_extra_js_url(hass, CARD_URL)
-    _LOGGER.info("Q3JS card registered at %s", CARD_URL)
+    """Register Q3JS Lovelace card as a proper Lovelace resource."""
+    hass.async_create_task(_async_register_resource(hass))
     return True
+
+
+async def _async_register_resource(hass: HomeAssistant) -> None:
+    """Add the card JS to Lovelace resources so it appears in the Resources UI."""
+    try:
+        from homeassistant.components.lovelace import ResourceStorageCollection  # type: ignore[attr-defined]
+    except ImportError:
+        # Fallback for older HA versions
+        from homeassistant.components.frontend import add_extra_js_url
+        add_extra_js_url(hass, CARD_URL)
+        _LOGGER.info("Q3JS card registered via add_extra_js_url at %s", CARD_URL)
+        return
+
+    # Wait for lovelace to be ready
+    await hass.async_block_till_done()
+
+    try:
+        lovelace = hass.data.get("lovelace")
+        if lovelace is None:
+            raise RuntimeError("lovelace not in hass.data")
+
+        resources: ResourceStorageCollection = lovelace["resources"]
+        await resources.async_load()
+
+        # Check if already registered (any entry pointing at our hacsfiles path)
+        existing = [
+            r for r in resources.async_items()
+            if "q3js-card.js" in r.get("url", "")
+        ]
+
+        if existing:
+            # Update URL in place (handles hacstag changes on upgrade)
+            for r in existing:
+                await resources.async_update_item(r["id"], {"url": CARD_URL, "res_type": "module"})
+            _LOGGER.info("Q3JS card resource updated to %s", CARD_URL)
+        else:
+            await resources.async_create_item({"url": CARD_URL, "res_type": "module"})
+            _LOGGER.info("Q3JS card resource created at %s", CARD_URL)
+
+    except Exception as err:
+        # Never block setup — fall back to add_extra_js_url
+        _LOGGER.warning("Could not register Lovelace resource (%s), falling back", err)
+        from homeassistant.components.frontend import add_extra_js_url
+        add_extra_js_url(hass, CARD_URL)
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
