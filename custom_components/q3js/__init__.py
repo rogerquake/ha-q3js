@@ -56,23 +56,54 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
 
 async def _async_add_resource(hass: HomeAssistant) -> None:
-    """Add card JS to Lovelace resources (memory + storage)."""
+    """Add card JS to Lovelace resources via live lovelace collection."""
     import uuid
-    from homeassistant.helpers.storage import Store
 
-    store: Store = Store(hass, 1, "lovelace_resources")
-    data = await store.async_load() or {"items": []}
-    items: list[dict] = data.get("items", [])
+    _LOGGER.warning("Q3JS: attempting to register Lovelace resource: %s", CARD_URL)
 
-    if any(i.get("url") == CARD_URL for i in items):
-        _LOGGER.info("Q3JS card already in resources: %s", CARD_URL)
-        return
+    try:
+        # Access the live in-memory resource collection that the UI reads from
+        lovelace = hass.data.get("lovelace")
+        if lovelace is None:
+            raise RuntimeError("lovelace not in hass.data yet")
 
-    items = [i for i in items if "q3js-card.js" not in i.get("url", "")]
-    items.append({"id": uuid.uuid4().hex, "type": "module", "url": CARD_URL})
-    data["items"] = items
-    await store.async_save(data)
-    _LOGGER.info("Q3JS card added to resources: %s", CARD_URL)
+        resources = lovelace.get("resources")
+        if resources is None:
+            raise RuntimeError("lovelace resources collection not available")
+
+        await resources.async_load()
+        existing = resources.async_items()
+        _LOGGER.warning("Q3JS: existing resources: %s", [i.get("url") for i in existing])
+
+        # Remove stale entries
+        for item in list(resources.async_items()):
+            if "q3js-card.js" in item.get("url", ""):
+                await resources.async_delete_item(item["id"])
+                _LOGGER.warning("Q3JS: removed stale resource %s", item.get("url"))
+
+        await resources.async_create_item({"res_type": "module", "url": CARD_URL})
+        _LOGGER.warning("Q3JS: resource registered successfully: %s", CARD_URL)
+
+    except Exception as err:
+        _LOGGER.warning("Q3JS: live collection failed (%s), falling back to storage write", err)
+        # Fallback: write directly to storage file
+        import json, uuid as _uuid
+        from pathlib import Path as _Path
+        storage_path = _Path(hass.config.config_dir) / ".storage" / "lovelace_resources"
+        try:
+            raw = json.loads(storage_path.read_text()) if storage_path.exists() else {}
+        except Exception:
+            raw = {}
+        raw.setdefault("version", 1)
+        raw.setdefault("minor_version", 1)
+        raw.setdefault("key", "lovelace_resources")
+        raw.setdefault("data", {}).setdefault("items", [])
+        items = raw["data"]["items"]
+        items = [i for i in items if "q3js-card.js" not in i.get("url", "")]
+        items.append({"id": _uuid.uuid4().hex, "type": "module", "url": CARD_URL})
+        raw["data"]["items"] = items
+        storage_path.write_text(json.dumps(raw, indent=4))
+        _LOGGER.warning("Q3JS: wrote to storage file directly: %s", CARD_URL)
 
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
