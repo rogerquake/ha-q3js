@@ -1,6 +1,6 @@
 # Q3JS – Quake III Arena for Home Assistant
 
-[![GitHub Release](https://img.shields.io/github/release/YOUR_GITHUB_USER/ha-q3js.svg)](https://github.com/YOUR_GITHUB_USER/ha-q3js/releases)
+[![GitHub Release](https://img.shields.io/github/release/rogerquake/ha-q3js.svg)](https://github.com/rogerquake/ha-q3js/releases)
 [![HACS](https://img.shields.io/badge/HACS-Custom-41BDF5.svg)](https://hacs.xyz)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE.md)
 
