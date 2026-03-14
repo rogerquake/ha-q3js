@@ -34,16 +34,17 @@ CARD_URL = f"/local/q3js-card.js?v={_card_version()}"
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up Q3JS from a config entry."""
-    print("Q3JS: async_setup_entry called", flush=True)
-    _LOGGER.warning("Q3JS: async_setup_entry called")
 
-    # Copy card JS to /config/www/ so it's served at /local/q3js-card.js
-    import shutil
-    try:
+    # Copy card JS to /config/www/ — must run in executor (blocking I/O)
+    def _copy_card() -> None:
+        import shutil
         www_dir = Path(hass.config.config_dir) / "www"
         www_dir.mkdir(exist_ok=True)
         shutil.copy2(str(_CARD_SRC), str(www_dir / "q3js-card.js"))
-        _LOGGER.warning("Q3JS: copied card JS to %s", www_dir)
+
+    try:
+        await hass.async_add_executor_job(_copy_card)
+        _LOGGER.warning("Q3JS: copied card JS to /config/www")
     except Exception as err:
         _LOGGER.warning("Q3JS: failed to copy card JS: %s", err)
 
@@ -87,24 +88,28 @@ async def _async_add_resource(hass: HomeAssistant) -> None:
 
     except Exception as err:
         _LOGGER.warning("Q3JS: live collection failed (%s), falling back to storage write", err)
-        # Fallback: write directly to storage file
+        # Fallback: write to storage file via executor (non-blocking)
         import json, uuid as _uuid
-        from pathlib import Path as _Path
-        storage_path = _Path(hass.config.config_dir) / ".storage" / "lovelace_resources"
-        try:
-            raw = json.loads(storage_path.read_text()) if storage_path.exists() else {}
-        except Exception:
-            raw = {}
-        raw.setdefault("version", 1)
-        raw.setdefault("minor_version", 1)
-        raw.setdefault("key", "lovelace_resources")
-        raw.setdefault("data", {}).setdefault("items", [])
-        items = raw["data"]["items"]
-        items = [i for i in items if "q3js-card.js" not in i.get("url", "")]
-        items.append({"id": _uuid.uuid4().hex, "type": "module", "url": CARD_URL})
-        raw["data"]["items"] = items
-        storage_path.write_text(json.dumps(raw, indent=4))
-        _LOGGER.warning("Q3JS: wrote to storage file directly: %s", CARD_URL)
+
+        def _write_storage() -> None:
+            from pathlib import Path as _Path
+            storage_path = _Path(hass.config.config_dir) / ".storage" / "lovelace_resources"
+            try:
+                raw = json.loads(storage_path.read_text()) if storage_path.exists() else {}
+            except Exception:
+                raw = {}
+            raw.setdefault("version", 1)
+            raw.setdefault("minor_version", 1)
+            raw.setdefault("key", "lovelace_resources")
+            raw.setdefault("data", {}).setdefault("items", [])
+            items = raw["data"]["items"]
+            items = [i for i in items if "q3js-card.js" not in i.get("url", "")]
+            items.append({"id": _uuid.uuid4().hex, "type": "module", "url": CARD_URL})
+            raw["data"]["items"] = items
+            storage_path.write_text(json.dumps(raw, indent=4))
+
+        await hass.async_add_executor_job(_write_storage)
+        _LOGGER.warning("Q3JS: wrote to storage file: %s", CARD_URL)
 
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
