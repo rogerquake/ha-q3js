@@ -19,54 +19,58 @@ from .const import DOMAIN
 _LOGGER = logging.getLogger(__name__)
 PLATFORMS: list[Platform] = [Platform.BINARY_SENSOR, Platform.SENSOR]
 
-# HACS serves custom_components/q3js/www/ at /hacsfiles/q3js/
-# Use an MD5 hash of the JS as the hacstag for cache-busting
 _CARD_SRC = Path(__file__).parent / "www" / "q3js-card.js"
 
-def _hacstag() -> str:
+
+def _card_version() -> str:
     try:
-        return hashlib.md5(_CARD_SRC.read_bytes()).hexdigest()[:12]
+        return hashlib.md5(_CARD_SRC.read_bytes()).hexdigest()[:8]
     except Exception:
         return "1"
 
-CARD_URL = f"/hacsfiles/ha-q3js/q3js-card.js?hacstag={_hacstag()}"
 
-
-def _sync_register_resource(config_dir: str) -> None:
-    """Write card URL into lovelace_resources synchronously at import time,
-    before HA loads the Lovelace component from storage."""
+def _sync_setup_card(config_dir: str) -> str:
+    """Copy card JS to /config/www/ and register in lovelace_resources. Returns the URL."""
     import json
+    import shutil
     import uuid
 
-    storage_path = Path(config_dir) / ".storage" / "lovelace_resources"
+    # Copy JS to www so it's served at /local/q3js-card.js
+    www_dir = Path(config_dir) / "www"
+    www_dir.mkdir(exist_ok=True)
+    shutil.copy2(str(_CARD_SRC), str(www_dir / "q3js-card.js"))
 
+    card_url = f"/local/q3js-card.js?v={_card_version()}"
+
+    # Write into lovelace_resources storage
+    storage_path = Path(config_dir) / ".storage" / "lovelace_resources"
     if storage_path.exists():
         try:
-            existing = json.loads(storage_path.read_text())
+            data = json.loads(storage_path.read_text())
         except Exception:
-            existing = {"version": 1, "minor_version": 1, "key": "lovelace_resources", "data": {"items": []}}
+            data = {"version": 1, "minor_version": 1, "key": "lovelace_resources", "data": {"items": []}}
     else:
-        existing = {"version": 1, "minor_version": 1, "key": "lovelace_resources", "data": {"items": []}}
+        data = {"version": 1, "minor_version": 1, "key": "lovelace_resources", "data": {"items": []}}
 
-    items: list[dict] = existing.get("data", {}).get("items", [])
+    items: list[dict] = data.get("data", {}).get("items", [])
 
-    # Already registered with exact same URL — nothing to do
-    if any(i.get("url") == CARD_URL for i in items):
-        _LOGGER.debug("Q3JS card already in lovelace_resources, skipping")
-        return
+    # Already registered with same URL — skip
+    if any(i.get("url") == card_url for i in items):
+        return card_url
 
-    # Remove stale q3js-card entries (old hacstag / old path)
+    # Remove stale entries
     items = [i for i in items if "q3js-card.js" not in i.get("url", "")]
-    items.append({"id": uuid.uuid4().hex, "type": "module", "url": CARD_URL})
-    existing["data"]["items"] = items
+    items.append({"id": uuid.uuid4().hex, "type": "module", "url": card_url})
+    data["data"]["items"] = items
+    storage_path.write_text(json.dumps(data, indent=4))
 
-    storage_path.write_text(json.dumps(existing, indent=4))
-    _LOGGER.info("Q3JS card registered in lovelace_resources: %s", CARD_URL)
+    return card_url
 
 
 async def async_setup(hass: HomeAssistant, config: dict) -> bool:
-    """Register Q3JS Lovelace card resource."""
-    await hass.async_add_executor_job(_sync_register_resource, hass.config.config_dir)
+    """Copy card JS to www and register as Lovelace resource."""
+    card_url = await hass.async_add_executor_job(_sync_setup_card, hass.config.config_dir)
+    _LOGGER.info("Q3JS card registered: %s", card_url)
     return True
 
 
