@@ -1,6 +1,4 @@
 {
   "name": "Q3JS - Quake III Arena",
   "render_readme": true,
-  "content_in_root": false,
-  "filename": "q3js-card.js"
 }
