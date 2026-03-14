@@ -32,28 +32,42 @@ def _hacstag() -> str:
 CARD_URL = f"/hacsfiles/ha-q3js/q3js-card.js?hacstag={_hacstag()}"
 
 
-async def async_setup(hass: HomeAssistant, config: dict) -> bool:
-    """Register Q3JS Lovelace card as a proper Lovelace resource."""
-    hass.async_create_task(_async_register_resource(hass))
-    return True
-
-
-async def _async_register_resource(hass: HomeAssistant) -> None:
-    """Add the card JS to lovelace_resources storage so it appears in the Resources UI."""
+def _sync_register_resource(config_dir: str) -> None:
+    """Write card URL into lovelace_resources synchronously at import time,
+    before HA loads the Lovelace component from storage."""
+    import json
     import uuid
-    from homeassistant.helpers.storage import Store
 
-    store = Store(hass, 1, "lovelace_resources")
-    data = await store.async_load() or {"items": []}
-    items: list[dict] = data.get("items", [])
+    storage_path = Path(config_dir) / ".storage" / "lovelace_resources"
 
-    # Remove any stale q3js-card entries (different hacstag / old path)
+    if storage_path.exists():
+        try:
+            existing = json.loads(storage_path.read_text())
+        except Exception:
+            existing = {"version": 1, "minor_version": 1, "key": "lovelace_resources", "data": {"items": []}}
+    else:
+        existing = {"version": 1, "minor_version": 1, "key": "lovelace_resources", "data": {"items": []}}
+
+    items: list[dict] = existing.get("data", {}).get("items", [])
+
+    # Already registered with exact same URL — nothing to do
+    if any(i.get("url") == CARD_URL for i in items):
+        _LOGGER.debug("Q3JS card already in lovelace_resources, skipping")
+        return
+
+    # Remove stale q3js-card entries (old hacstag / old path)
     items = [i for i in items if "q3js-card.js" not in i.get("url", "")]
+    items.append({"id": uuid.uuid4().hex, "type": "module", "url": CARD_URL})
+    existing["data"]["items"] = items
 
-    items.append({"id": str(uuid.uuid4()), "type": "module", "url": CARD_URL})
-    data["items"] = items
-    await store.async_save(data)
+    storage_path.write_text(json.dumps(existing, indent=4))
     _LOGGER.info("Q3JS card registered in lovelace_resources: %s", CARD_URL)
+
+
+async def async_setup(hass: HomeAssistant, config: dict) -> bool:
+    """Register Q3JS Lovelace card resource."""
+    await hass.async_add_executor_job(_sync_register_resource, hass.config.config_dir)
+    return True
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
