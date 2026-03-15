@@ -30,9 +30,12 @@ class Q3JSMatchActiveSensor(Q3JSEntity, BinarySensorEntity):
     _attr_icon = "mdi:gamepad-variant-outline"
     _attr_name = "Match Active"
 
+    _attr_has_entity_name = False
+
     def __init__(self, coordinator: Q3JSCoordinator, entry: ConfigEntry) -> None:
         super().__init__(coordinator, entry)
         self._attr_unique_id = f"{entry.entry_id}_match_active"
+        self.entity_id = "binary_sensor.q3js_match_active"
 
     @property
     def is_on(self) -> bool:
