@@ -44,10 +44,12 @@ class Q3JSMapSensor(Q3JSEntity, SensorEntity):
 
     _attr_icon = "mdi:map"
     _attr_name = "Current Map"
+    _attr_has_entity_name = False
 
     def __init__(self, coordinator: Q3JSCoordinator, entry: ConfigEntry) -> None:
         super().__init__(coordinator, entry)
         self._attr_unique_id = f"{entry.entry_id}_map_name"
+        self.entity_id = "sensor.q3js_current_map"
 
     @property
     def native_value(self) -> str:
@@ -59,12 +61,14 @@ class Q3JSTimeSensor(Q3JSEntity, SensorEntity):
 
     _attr_icon = "mdi:timer-outline"
     _attr_name = "Match Time"
+    _attr_has_entity_name = False
     _attr_native_unit_of_measurement = UnitOfTime.SECONDS
     _attr_state_class = SensorStateClass.MEASUREMENT
 
     def __init__(self, coordinator: Q3JSCoordinator, entry: ConfigEntry) -> None:
         super().__init__(coordinator, entry)
         self._attr_unique_id = f"{entry.entry_id}_match_time"
+        self.entity_id = "sensor.q3js_match_time"
 
     @property
     def native_value(self) -> int:
