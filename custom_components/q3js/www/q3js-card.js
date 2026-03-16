@@ -19,10 +19,16 @@ class Q3JSCard extends HTMLElement {
       web_port: 8443,
       connect_server: "",
       entity_prefix: "q3js",
+      auto_launch: false,
+      theme: "dark",
+      show_header: true,
+      show_controls: true,
       show_map: true,
       show_time: true,
       show_leaderboard: true,
       show_players: true,
+      accent_color: "",
+      card_background: "",
       height: 600,
     };
   }
@@ -33,10 +39,16 @@ class Q3JSCard extends HTMLElement {
       web_port: 8443,
       connect_server: "",
       entity_prefix: "q3js",
+      auto_launch: false,
+      theme: "dark",
+      show_header: true,
+      show_controls: true,
       show_map: true,
       show_time: true,
       show_leaderboard: true,
       show_players: true,
+      accent_color: "",
+      card_background: "",
       height: 600,
       ...config,
     };
@@ -50,51 +62,132 @@ class Q3JSCard extends HTMLElement {
 
   disconnectedCallback() {}
 
+  _css() {
+    const c = this._config;
+    const accent = c.accent_color || "#ff6600";
+    const accentDim = c.accent_color || "#992200";
+    const accentBright = c.accent_color || "#ff4400";
+    const theme = c.theme || "dark";
+
+    // Per-theme base styles
+    const themes = {
+      dark: {
+        cardBg: c.card_background || "#0a0a14",
+        headerBg: "transparent",
+        footerBg: "#04040c",
+        lbBg: "#07070f",
+        ctrlBg: "#04040c",
+        ctrlBtnBg: "#0e0e1a",
+        ctrlBtnHover: "#1a1a2e",
+        borderColor: "#1e1e2e",
+        footerBorder: "#111",
+        lbBorder: "#1a1a2a",
+        rowBorder: "#111",
+        textColor: "#ccc",
+        mutedColor: "#666",
+        rankColor: "#444",
+        deathColor: "#555",
+        emptyColor: "#333",
+        ctrlColor: "#888",
+        ctrlBorder: "#222",
+      },
+      minimal: {
+        cardBg: c.card_background || "var(--ha-card-background, var(--card-background-color))",
+        headerBg: "transparent",
+        footerBg: "var(--secondary-background-color)",
+        lbBg: "var(--secondary-background-color)",
+        ctrlBg: "var(--secondary-background-color)",
+        ctrlBtnBg: "var(--card-background-color)",
+        ctrlBtnHover: "var(--primary-background-color)",
+        borderColor: "var(--divider-color)",
+        footerBorder: "var(--divider-color)",
+        lbBorder: "var(--divider-color)",
+        rowBorder: "var(--divider-color)",
+        textColor: "var(--primary-text-color)",
+        mutedColor: "var(--secondary-text-color)",
+        rankColor: "var(--secondary-text-color)",
+        deathColor: "var(--secondary-text-color)",
+        emptyColor: "var(--secondary-text-color)",
+        ctrlColor: "var(--secondary-text-color)",
+        ctrlBorder: "var(--divider-color)",
+      },
+      transparent: {
+        cardBg: c.card_background || "transparent",
+        headerBg: "transparent",
+        footerBg: "transparent",
+        lbBg: "transparent",
+        ctrlBg: "transparent",
+        ctrlBtnBg: "rgba(0,0,0,0.3)",
+        ctrlBtnHover: "rgba(0,0,0,0.5)",
+        borderColor: "rgba(255,255,255,0.1)",
+        footerBorder: "rgba(255,255,255,0.1)",
+        lbBorder: "rgba(255,255,255,0.1)",
+        rowBorder: "rgba(255,255,255,0.08)",
+        textColor: "var(--primary-text-color)",
+        mutedColor: "var(--secondary-text-color)",
+        rankColor: "var(--secondary-text-color)",
+        deathColor: "var(--secondary-text-color)",
+        emptyColor: "var(--secondary-text-color)",
+        ctrlColor: "var(--primary-text-color)",
+        ctrlBorder: "rgba(255,255,255,0.2)",
+      },
+    };
+
+    const t = themes[theme] || themes.dark;
+    const height = c.height || 600;
+
+    return `
+      :host{display:block}
+      ha-card{background:${t.cardBg};overflow:hidden}
+      .header{display:flex;align-items:center;justify-content:space-between;padding:12px 16px 8px;font-family:monospace;font-size:1em;letter-spacing:2px;text-transform:uppercase;color:${accent};border-bottom:1px solid ${t.borderColor};background:${t.headerBg}}
+      .dot{width:9px;height:9px;border-radius:50%;background:${t.rankColor};transition:all .4s}
+      .dot.on{background:#22ff44;box-shadow:0 0 6px #22ff44}
+      .wrap{position:relative;width:100%;height:${height}px;background:#000}
+      .frame{width:100%;height:100%;border:none;display:block}
+      .hidden{display:none!important}
+      .splash{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;background:radial-gradient(ellipse at 50% 40%,#1c0800,#000 70%)}
+      .logo{font-family:monospace;font-size:3.5em;font-weight:900;color:${accent};text-shadow:0 0 30px ${accentBright};letter-spacing:6px;margin-bottom:4px}
+      .sub{font-family:monospace;font-size:.72em;color:#884422;letter-spacing:4px;text-transform:uppercase;margin-bottom:28px}
+      .play{padding:13px 42px;background:${accentDim};color:#fff;border:2px solid ${accentBright};font-family:monospace;font-size:.9em;letter-spacing:4px;text-transform:uppercase;cursor:pointer;clip-path:polygon(10px 0%,100% 0%,calc(100% - 10px) 100%,0% 100%)}
+      .play:hover{background:${accentBright}}
+      .meta{margin-top:18px;font-family:monospace;font-size:.72em;color:#553322;text-align:center;line-height:1.8}
+      .meta span{color:#cc6633}
+      .lb{background:${t.lbBg};border-top:1px solid ${t.lbBorder};padding:10px 16px}
+      .lbh{font-family:monospace;font-size:.7em;letter-spacing:3px;color:${accent};text-transform:uppercase;margin-bottom:6px}
+      .lbrow{display:flex;align-items:center;padding:4px 0;border-bottom:1px solid ${t.rowBorder};font-family:monospace;font-size:.82em}
+      .rk{color:${t.rankColor};width:26px;flex-shrink:0}
+      .nm{color:${t.textColor};flex:1;padding:0 6px;overflow:hidden;text-overflow:ellipsis}
+      .fr{color:${accent};font-weight:bold;width:38px;text-align:right}
+      .de{color:${t.deathColor};width:44px;text-align:right;font-size:.85em}
+      .empty{color:${t.emptyColor};font-family:monospace;font-size:.78em;padding:6px 0}
+      .footer{display:flex;gap:12px;flex-wrap:wrap;padding:7px 16px;background:${t.footerBg};border-top:1px solid ${t.footerBorder}}
+      .chip{font-family:monospace;font-size:.72em;color:${t.mutedColor};display:flex;align-items:center;gap:4px}
+      .chip b{color:${accent}}
+      .ctrls{display:flex;gap:6px;flex-wrap:wrap;padding:7px 16px;background:${t.ctrlBg};border-top:1px solid ${t.footerBorder}}
+      button.ctrl{padding:4px 12px;background:${t.ctrlBtnBg};color:${t.ctrlColor};border:1px solid ${t.ctrlBorder};font-family:monospace;font-size:.72em;cursor:pointer;letter-spacing:1px}
+      button.ctrl:hover{background:${t.ctrlBtnHover};color:${accent};border-color:${accentBright}}
+      .refocus{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,0.55);color:${accent};font-family:monospace;font-size:1.1em;letter-spacing:3px;cursor:pointer;z-index:10}
+      .refocus:hover{background:rgba(0,0,0,0.7)}
+    `;
+  }
+
   _render() {
     const c = this._config;
-    const height = c.height || 600;
+    const showHeader = c.show_header !== false;
+    const showControls = c.show_controls !== false;
     const showLb = c.show_leaderboard !== false;
     const showMap = c.show_map !== false;
     const showTime = c.show_time !== false;
-    const showPlayers = c.show_players !== false;
     const showFooter = showMap || showTime;
 
     this.shadowRoot.innerHTML = `
-      <style>
-        :host{display:block}ha-card{background:#0a0a14;overflow:hidden}
-        .header{display:flex;align-items:center;justify-content:space-between;padding:12px 16px 8px;font-family:monospace;font-size:1em;letter-spacing:2px;text-transform:uppercase;color:#ff6600;border-bottom:1px solid #1e1e2e}
-        .dot{width:9px;height:9px;border-radius:50%;background:#333;transition:all .4s}
-        .dot.on{background:#22ff44;box-shadow:0 0 6px #22ff44}
-        .wrap{position:relative;width:100%;height:${height}px;background:#000}
-        .frame{width:100%;height:100%;border:none;display:block}
-        .hidden{display:none!important}
-        .splash{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;background:radial-gradient(ellipse at 50% 40%,#1c0800,#000 70%)}
-        .logo{font-family:monospace;font-size:3.5em;font-weight:900;color:#ff6600;text-shadow:0 0 30px #ff4400;letter-spacing:6px;margin-bottom:4px}
-        .sub{font-family:monospace;font-size:.72em;color:#884422;letter-spacing:4px;text-transform:uppercase;margin-bottom:28px}
-        .play{padding:13px 42px;background:#992200;color:#fff;border:2px solid #ff4400;font-family:monospace;font-size:.9em;letter-spacing:4px;text-transform:uppercase;cursor:pointer;clip-path:polygon(10px 0%,100% 0%,calc(100% - 10px) 100%,0% 100%)}
-        .play:hover{background:#ff4400}
-        .meta{margin-top:18px;font-family:monospace;font-size:.72em;color:#553322;text-align:center;line-height:1.8}
-        .meta span{color:#cc6633}
-        .lb{background:#07070f;border-top:1px solid #1a1a2a;padding:10px 16px}
-        .lbh{font-family:monospace;font-size:.7em;letter-spacing:3px;color:#ff6600;text-transform:uppercase;margin-bottom:6px}
-        .lbrow{display:flex;align-items:center;padding:4px 0;border-bottom:1px solid #111;font-family:monospace;font-size:.82em}
-        .rk{color:#444;width:26px;flex-shrink:0}.nm{color:#ccc;flex:1;padding:0 6px;overflow:hidden;text-overflow:ellipsis}
-        .fr{color:#ff6600;font-weight:bold;width:38px;text-align:right}.de{color:#555;width:44px;text-align:right;font-size:.85em}
-        .empty{color:#333;font-family:monospace;font-size:.78em;padding:6px 0}
-        .footer{display:flex;gap:12px;flex-wrap:wrap;padding:7px 16px;background:#04040c;border-top:1px solid #111}
-        .chip{font-family:monospace;font-size:.72em;color:#666;display:flex;align-items:center;gap:4px}
-        .chip b{color:#cc7733}
-        .ctrls{display:flex;gap:6px;flex-wrap:wrap;padding:7px 16px;background:#04040c;border-top:1px solid #0f0f1a}
-        button.ctrl{padding:4px 12px;background:#0e0e1a;color:#888;border:1px solid #222;font-family:monospace;font-size:.72em;cursor:pointer;letter-spacing:1px}
-        button.ctrl:hover{background:#1a1a2e;color:#ff6600;border-color:#ff4400}
-        .refocus{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,0.55);color:#ff6600;font-family:monospace;font-size:1.1em;letter-spacing:3px;cursor:pointer;z-index:10}
-        .refocus:hover{background:rgba(0,0,0,0.7)}
-      </style>
+      <style>${this._css()}</style>
       <ha-card>
+        ${showHeader ? `
         <div class="header">
           <div>⚡ ${this._esc(c.title || "Quake III Arena")}</div>
           <div class="dot" id="dot"></div>
-        </div>
+        </div>` : `<div class="dot hidden" id="dot"></div>`}
         <div class="wrap">
           <div class="splash" id="splash">
             <div class="logo">Q3JS</div>
@@ -107,39 +200,40 @@ class Q3JSCard extends HTMLElement {
           <iframe class="frame hidden" id="frame" allow="autoplay;fullscreen;pointer-lock" allowfullscreen></iframe>
           <div class="refocus hidden" id="refocus">🖱 Click to resume</div>
         </div>
-        ${showLb ? `<div class="lb"><div class="lbh">🏆 ${showPlayers ? "Leaderboard" : "Match"}</div><div id="lbRows"><div class="empty">Waiting for match data…</div></div></div>` : ""}
+        ${showLb ? `<div class="lb"><div class="lbh">🏆 Leaderboard</div><div id="lbRows"><div class="empty">Waiting for match data…</div></div></div>` : ""}
         ${showFooter ? `
         <div class="footer">
           ${showMap ? `<div class="chip">🗺 <b id="fMap">–</b></div>` : ""}
           ${showTime ? `<div class="chip">⏱ <b id="fTime">--:--</b></div>` : ""}
           <div class="chip" id="fStatus">🔴 <b>Idle</b></div>
         </div>` : ""}
+        ${showControls ? `
         <div class="ctrls">
           <button class="ctrl" id="btnFs">⛶ Fullscreen</button>
           <button class="ctrl" id="btnDisc">✕ Disconnect</button>
-        </div>
+        </div>` : ""}
       </ha-card>`;
 
     this.shadowRoot.getElementById("playBtn").addEventListener("click", () => this._launch());
     this.shadowRoot.getElementById("refocus").addEventListener("click", () => this._refocus());
-    this.shadowRoot.getElementById("btnFs").addEventListener("click", () => this._fullscreen());
-    this.shadowRoot.getElementById("btnDisc").addEventListener("click", () => this._disconnect());
+    if (showControls) {
+      this.shadowRoot.getElementById("btnFs").addEventListener("click", () => this._fullscreen());
+      this.shadowRoot.getElementById("btnDisc").addEventListener("click", () => this._disconnect());
+    }
 
-    // blur = iframe took focus (game active) → hide overlay
-    // focus = parent got focus back (user clicked HA) → show overlay
     window.addEventListener("blur", () => {
       if (!this._launched) return;
-      const refocus = this.shadowRoot.getElementById("refocus");
-      if (refocus) refocus.classList.add("hidden");
+      const r = this.shadowRoot.getElementById("refocus");
+      if (r) r.classList.add("hidden");
     });
     window.addEventListener("focus", () => {
       if (!this._launched) return;
-      const refocus = this.shadowRoot.getElementById("refocus");
-      if (refocus) refocus.classList.remove("hidden");
+      const r = this.shadowRoot.getElementById("refocus");
+      if (r) r.classList.remove("hidden");
     });
 
-    // Re-run updateUI in case hass is already available
     if (this._hass) this._updateUI();
+    if (this._config.auto_launch && !this._launched) this._launch();
   }
 
   _launch() {
@@ -151,12 +245,13 @@ class Q3JSCard extends HTMLElement {
     const src = connectTarget
       ? `${base}?${encodeURIComponent("+connect " + connectTarget)}`
       : base;
-    this.shadowRoot.getElementById("frame").src = src;
+    const frame = this.shadowRoot.getElementById("frame");
+    frame.src = src;
     this.shadowRoot.getElementById("splash").classList.add("hidden");
-    this.shadowRoot.getElementById("frame").classList.remove("hidden");
+    frame.classList.remove("hidden");
     this._launched = true;
-    const refocus = this.shadowRoot.getElementById("refocus");
-    if (refocus) refocus.classList.add("hidden");
+    const r = this.shadowRoot.getElementById("refocus");
+    if (r) r.classList.add("hidden");
   }
 
   _fullscreen() {
@@ -165,8 +260,9 @@ class Q3JSCard extends HTMLElement {
   }
 
   _disconnect() {
-    this.shadowRoot.getElementById("frame").src = "about:blank";
-    this.shadowRoot.getElementById("frame").classList.add("hidden");
+    const frame = this.shadowRoot.getElementById("frame");
+    frame.src = "about:blank";
+    frame.classList.add("hidden");
     this.shadowRoot.getElementById("splash").classList.remove("hidden");
     this._launched = false;
     this._setActive(false);
@@ -174,51 +270,42 @@ class Q3JSCard extends HTMLElement {
 
   _refocus() {
     const frame = this.shadowRoot.getElementById("frame");
-    const refocus = this.shadowRoot.getElementById("refocus");
-    if (refocus) refocus.classList.add("hidden");
-    if (frame) {
-      frame.focus();
-      frame.contentWindow && frame.contentWindow.focus();
-    }
+    const r = this.shadowRoot.getElementById("refocus");
+    if (r) r.classList.add("hidden");
+    if (frame) { frame.focus(); frame.contentWindow && frame.contentWindow.focus(); }
   }
 
   _updateUI() {
     const hass = this._hass;
     if (!hass) return;
     const prefix = this._config.entity_prefix || "q3js";
-    const showPlayers = this._config.show_players !== false;
-    const showMap = this._config.show_map !== false;
-    const showTime = this._config.show_time !== false;
-    const showLb = this._config.show_leaderboard !== false;
 
-    // Read from HA entity states
-    const mapState = hass.states[`sensor.${prefix}_current_map`];
-    const timeState = hass.states[`sensor.${prefix}_match_time`];
+    const mapState    = hass.states[`sensor.${prefix}_current_map`];
+    const timeState   = hass.states[`sensor.${prefix}_match_time`];
     const activeState = hass.states[`binary_sensor.${prefix}_match_active`];
 
-    const mapName = mapState ? mapState.state : "–";
+    const mapName     = mapState ? mapState.state : "–";
     const matchActive = activeState ? activeState.state === "on" : false;
-    const timeFormatted = timeState ? (timeState.attributes.formatted || "00:00") : "00:00";
+    const timeFmt     = timeState ? (timeState.attributes.formatted || "00:00") : "00:00";
 
     this._setActive(matchActive);
 
-    if (showMap) {
+    if (this._config.show_map !== false) {
       const fMap = this.shadowRoot.getElementById("fMap");
       if (fMap) fMap.textContent = mapName;
     }
-    if (showTime) {
+    if (this._config.show_time !== false) {
       const fTime = this.shadowRoot.getElementById("fTime");
-      if (fTime) fTime.textContent = timeFormatted;
+      if (fTime) fTime.textContent = timeFmt;
     }
     const fStatus = this.shadowRoot.getElementById("fStatus");
     if (fStatus) fStatus.innerHTML = matchActive ? "🟢 <b>Active</b>" : "🔴 <b>Idle</b>";
 
-    if (showLb) {
+    if (this._config.show_leaderboard !== false) {
       const lbRows = this.shadowRoot.getElementById("lbRows");
       if (!lbRows) return;
 
-      if (showPlayers) {
-        // Scan hass states for player frag sensors
+      if (this._config.show_players !== false) {
         const fragPattern = new RegExp(`^sensor\\.${prefix}_(.+)_frags$`);
         const players = Object.entries(hass.states)
           .filter(([id]) => fragPattern.test(id))
@@ -239,15 +326,13 @@ class Q3JSCard extends HTMLElement {
               </div>`).join("")
           : `<div class="empty">No players yet…</div>`;
       } else {
-        // show_leaderboard true but show_players false — just show map/status summary
-        lbRows.innerHTML = `<div class="empty" style="color:#555">${matchActive ? "Match in progress" : "Waiting for match…"}</div>`;
+        lbRows.innerHTML = `<div class="empty">${matchActive ? "Match in progress" : "Waiting for match…"}</div>`;
       }
     }
   }
 
   _setActive(on) {
-    const d = this.shadowRoot.getElementById("dot");
-    if (d) d.classList.toggle("on", on);
+    this.shadowRoot.getElementById("dot")?.classList.toggle("on", on);
   }
 
   _esc(s) {
@@ -265,15 +350,17 @@ class Q3JSCardEditor extends HTMLElement {
   _render() {
     const c = this._config;
     const chk = (key) => c[key] !== false ? "checked" : "";
+    const sel = (key, val) => c[key] === val ? "selected" : "";
     this.innerHTML = `
       <style>
         .row{margin-bottom:10px}
         label{display:block;font-size:.8em;color:var(--secondary-text-color);margin-bottom:3px}
-        input[type=text],input[type=number]{width:100%;padding:6px 8px;border:1px solid var(--divider-color);border-radius:4px;background:var(--card-background-color);color:var(--primary-text-color);box-sizing:border-box}
+        input[type=text],input[type=number],select{width:100%;padding:6px 8px;border:1px solid var(--divider-color);border-radius:4px;background:var(--card-background-color);color:var(--primary-text-color);box-sizing:border-box}
         .toggles{display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:4px}
         .toggle{display:flex;align-items:center;gap:6px;font-size:.82em;color:var(--primary-text-color);cursor:pointer}
         .toggle input{width:auto}
         .section{font-size:.75em;color:var(--secondary-text-color);text-transform:uppercase;letter-spacing:1px;margin:14px 0 6px;border-bottom:1px solid var(--divider-color);padding-bottom:4px}
+        .hint{font-size:.75em;color:var(--secondary-text-color);margin-top:2px}
       </style>
       <div style="padding:12px">
         <div class="section">Connection</div>
@@ -285,9 +372,24 @@ class Q3JSCardEditor extends HTMLElement {
         <div class="section">Integration</div>
         <div class="row"><label>Entity Prefix</label><input type="text" id="entity_prefix" value="${c.entity_prefix || "q3js"}"></div>
 
-        <div class="section">Display</div>
+        <div class="section">Appearance</div>
+        <div class="row">
+          <label>Theme</label>
+          <select id="theme">
+            <option value="dark" ${sel("theme","dark")}>Dark (default)</option>
+            <option value="minimal" ${sel("theme","minimal")}>Minimal (use HA theme)</option>
+            <option value="transparent" ${sel("theme","transparent")}>Transparent</option>
+          </select>
+        </div>
+        <div class="row"><label>Accent Color <span class="hint">(leave blank for default orange)</span></label><input type="text" id="accent_color" value="${c.accent_color || ""}" placeholder="#ff6600"></div>
+        <div class="row"><label>Card Background <span class="hint">(leave blank for theme default)</span></label><input type="text" id="card_background" value="${c.card_background || ""}" placeholder="e.g. #0a0a14 or transparent"></div>
         <div class="row"><label>Card Height (px)</label><input type="number" id="height" value="${c.height || 600}"></div>
+
+        <div class="section">Visibility</div>
         <div class="toggles">
+          <label class="toggle"><input type="checkbox" id="auto_launch" ${chk("auto_launch")}> Auto Launch</label>
+          <label class="toggle"><input type="checkbox" id="show_header" ${chk("show_header")}> Show Header</label>
+          <label class="toggle"><input type="checkbox" id="show_controls" ${chk("show_controls")}> Show Controls</label>
           <label class="toggle"><input type="checkbox" id="show_map" ${chk("show_map")}> Show Map Name</label>
           <label class="toggle"><input type="checkbox" id="show_time" ${chk("show_time")}> Show Match Time</label>
           <label class="toggle"><input type="checkbox" id="show_leaderboard" ${chk("show_leaderboard")}> Show Leaderboard</label>
@@ -295,7 +397,7 @@ class Q3JSCardEditor extends HTMLElement {
         </div>
       </div>`;
 
-    this.querySelectorAll("input[type=text],input[type=number]")
+    this.querySelectorAll("input[type=text],input[type=number],select")
       .forEach(el => el.addEventListener("change", () => this._fire()));
     this.querySelectorAll("input[type=checkbox]")
       .forEach(el => el.addEventListener("change", () => this._fire()));
@@ -309,12 +411,18 @@ class Q3JSCardEditor extends HTMLElement {
       detail: {
         config: {
           ...this._config,
+          auto_launch: chk("auto_launch"),
           title: get("title"),
           server_host: get("server_host"),
           web_port: num("web_port"),
           connect_server: get("connect_server"),
           entity_prefix: get("entity_prefix"),
+          theme: get("theme"),
+          accent_color: get("accent_color"),
+          card_background: get("card_background"),
           height: num("height"),
+          show_header: chk("show_header"),
+          show_controls: chk("show_controls"),
           show_map: chk("show_map"),
           show_time: chk("show_time"),
           show_leaderboard: chk("show_leaderboard"),
