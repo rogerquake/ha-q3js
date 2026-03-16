@@ -1,7 +1,7 @@
 {
   "domain": "q3js",
   "name": "Q3JS - Quake III Arena",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "documentation": "https://github.com/rogerquake/ha-q3js",
   "issue_tracker": "https://github.com/rogerquake/ha-q3js/issues",
   "codeowners": [
